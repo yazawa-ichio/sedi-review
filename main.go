@@ -24,6 +24,7 @@ const usage = `使い方（リポジトリの中で。別の場所からは --re
   sedi-review init [--base REF] [--rule NAME] [--two-dot] [--force]
   sedi-review skill install|uninstall --agent claude|codex[,...] [--scope user|project] [--force]
   sedi-review skill status [--agent ...]
+  sedi-review version
   sedi-review open [--base REF] [--target REF] [--two-dot] [--rule NAME] [--port N] [--open] [-- PATHSPEC...]
   sedi-review list
   sedi-review refresh  --review ID
@@ -52,7 +53,7 @@ func main() {
 		os.Exit(2)
 	}
 	cmds := map[string]func([]string) error{
-		"init": cmdInit, "skill": cmdSkill, "open": cmdOpen, "list": cmdList, "refresh": cmdRefresh,
+		"init": cmdInit, "skill": cmdSkill, "version": cmdVersion, "--version": cmdVersion, "open": cmdOpen, "list": cmdList, "refresh": cmdRefresh,
 		"hunks": cmdHunks, "sections": cmdSections, "threads": cmdThreads,
 		"reply": cmdReply, "post": cmdPost, "reattach": cmdReattach, "unmark": cmdUnmark, "wait": cmdWait,
 	}

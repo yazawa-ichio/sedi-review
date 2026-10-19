@@ -18,6 +18,12 @@ sedi-review refresh --review ID
 | `list` | このリポジトリのレビューを出す |
 | `refresh` | 同じ指定のまま差分を取り直す。中身の変わったファイルとセクションの確認済みを外す |
 
+```
+sedi-review version
+```
+
+版を出す。`go install ...@v0.1.0` で入れたものはその版、手元で作ったものはコミットを出す（`--version` でも同じ）。
+
 ## skill を入れる命令
 
 ```

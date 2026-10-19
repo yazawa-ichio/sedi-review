@@ -17,7 +17,7 @@ go install github.com/yazawa-ichio/sedi-review@latest
 - `sedi-review` という名前の実行ファイルが `$GOBIN` に入る。`GOBIN` を設定していなければ `$(go env GOPATH)/bin`
   （既定では Windows が `%USERPROFILE%\go\bin`、macOS と Linux が `~/go/bin`）
 - そのフォルダが PATH に通っていなければ、PATH に足す
-- 版を固定するときは `@latest` の代わりに `@v0.1.0` のように書く
+- 版を固定するときは `@latest` の代わりに `@v0.1.0` のように書く。入っている版は `sedi-review version` で分かる
 - 画面のファイルとエージェント向けの skill は実行ファイルに埋め込まれているので、入れるのはこの 1 つだけでよい
 - 新しくするときは、同じ命令をもう一度実行する。skill も入れているなら、そのあと `sedi-review skill status` で確かめ、
   違っていれば `sedi-review skill install --agent <入れた先> --force` で入れ直す
