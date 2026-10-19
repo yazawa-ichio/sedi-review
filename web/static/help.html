@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sedi Review ヘルプ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+	<div class="title"><strong>Sedi Review</strong><span class="range">ヘルプ</span></div>
+</header>
+<main class="help">
+	<nav class="help-toc">
+		<a href="#use">使い方</a>
+		<a href="#agent">エージェントとのやり取り</a>
+		<a href="#data">保存と掃除</a>
+		<a href="#licenses">ライセンス</a>
+	</nav>
+
+	<section>
+		<p>AI が書いた大きな差分を、意味のまとまり（セクション）ごとに読むためのローカルの道具です。
+		画面は 127.0.0.1 の一時サーバーから出ていて、外へは何も送りません。</p>
+	</section>
+
+	<section id="use">
+		<h2>使い方</h2>
+		<dl>
+			<dt>セクション（左の列）</dt>
+			<dd>エージェントが意味・機能・依存関係でまとめた区切りです。選ぶと、そのセクションの hunk だけが右に出ます。
+				「全体」はレビュー全体、「未分類」はどのセクションにも入っていない hunk です。</dd>
+			<dt>ファイル・メッセージ（中の列）</dt>
+			<dd>ファイルの一覧は、既定では選んでいるセクションのファイルだけを出します。「すべて」に切り替えられます。
+				メッセージの一覧から、そのメッセージの場所へ移れます。</dd>
+			<dt>行を選ぶ</dt>
+			<dd>行番号を押すと 1 行、Shift を押しながらもう 1 か所押すと範囲を選べます。下に出る「メッセージ」で、その行に書けます。
+				Esc で選択を解除します。</dd>
+			<dt>メッセージ</dt>
+			<dd>全体・セクション・ファイル・hunk・行に付けられます。種類で、エージェントがすることが決まります。
+				<ul>
+					<li>指示: 求められた変更をする。しない場合は理由を返す</li>
+					<li>質問: 答えるだけで、コードは変えない</li>
+					<li>再考: 考え直した結果と代わりの案を返す。変えるかは返事を見て決める</li>
+					<li>その他: 本文から判断する</li>
+				</ul>
+				送るまでは編集と取り消しができます。送ったあとは編集できません。</dd>
+			<dt>確認済み</dt>
+			<dd>作業者が読んだことのチェックです。ファイルとセクションに付けられます。
+				名前が変わったときと、更新で中身が変わったときに外れます。エージェントは外すことだけができます。</dd>
+			<dt>更新</dt>
+			<dd>同じ指定のまま差分を取り直します。ブランチが進んだときに使います。</dd>
+			<dt>終わり方</dt>
+			<dd>この道具のタブをすべて閉じると、30 秒でサーバーが終わります。同じ指定で開き直すと、続きから読めます。</dd>
+		</dl>
+	</section>
+
+	<section id="agent">
+		<h2>エージェントとのやり取り</h2>
+		<ul>
+			<li>「コピー」はそのメッセージを、「一括コピー」は全部のメッセージを、貼るための文にしてクリップボードに入れます。
+				エージェントのチャットに貼ってください。</li>
+			<li>エージェントは、チャットで答えると同時に、同じ返事を道具にも書きます。返事はこの画面に出ます。</li>
+			<li>エージェントが待ち受け（<code>sedi-review wait</code>）を動かしている間は、上の欄が「待ち受け中」になり、
+				「送る」「まとめて送る」で貼らずに渡せます。</li>
+			<li>セクションは、「全体」の「セクションを頼む」でエージェントに作ってもらいます。</li>
+		</ul>
+	</section>
+
+	<section id="data">
+		<h2>保存と掃除</h2>
+		<ul>
+			<li>レビューの状態（セクション・確認済み・メッセージ・書き出し）は、リポジトリ直下の <code>.sedi-review/</code> に入ります。
+				このフォルダは自分の <code>.gitignore</code> で git から外れています。</li>
+			<li>設定（既定の比べる元・比べ方・ルール）は、リポジトリ直下の <code>.sedi-review.json</code> です。</li>
+			<li>掃除は <code>.sedi-review/</code> を消すだけです。</li>
+		</ul>
+	</section>
+
+	<section id="licenses">
+		<h2>ライセンス</h2>
+
+		<h3>Sedi Review</h3>
+		<p>Sedi Review のコードは MIT License です。このライセンスが対象とするのはコードだけで、
+			Sedi Review を使って作ったもの（セクション、確認済み、メッセージ、書き出した文など）は対象にしません。</p>
+		<pre class="license" data-src="LICENSE.txt">読み込み中…</pre>
+
+		<p>Sedi Review は、次の第三者のソフトウェアを含んでいます。</p>
+
+		<h3>Prism 1.30.0</h3>
+		<p>コードの色分けに使っています。<a href="https://prismjs.com" target="_blank" rel="noopener">prismjs.com</a>。
+			配布物を手を加えずに同梱しています（<code>vendor/prism.js</code>）。MIT License。</p>
+		<pre class="license" data-src="vendor/PRISM-LICENSE.txt">読み込み中…</pre>
+
+		<h3>Go の標準ライブラリ</h3>
+		<p>Sedi Review の実行ファイルは Go で作られていて、Go の標準ライブラリと実行時の仕組みを含みます。BSD 3-Clause License。</p>
+		<pre class="license" data-src="vendor/GO-LICENSE.txt">読み込み中…</pre>
+	</section>
+</main>
+<script src="help.js"></script>
+</body>
+</html>

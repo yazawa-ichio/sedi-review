@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sedi Review</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+	<div class="title">
+		<strong>Sedi Review</strong>
+		<span id="range" class="range"></span>
+	</div>
+	<div class="actions">
+		<span id="presence" class="chip"></span>
+		<button id="btn-refresh" title="同じ指定のまま差分を取り直す">更新</button>
+		<button id="btn-export" title="全部のメッセージをファイルに書き出し、貼るための文をコピーする">一括コピー</button>
+		<button id="btn-send-all" hidden title="全部のメッセージを待ち受けに渡す">まとめて送る</button>
+		<a class="button-link" href="help.html" target="_blank" rel="noopener" title="使い方とライセンス">ヘルプ</a>
+	</div>
+</header>
+<div class="layout">
+	<nav class="side">
+		<div class="col-title">セクション</div>
+		<div id="progress" class="progress"></div>
+		<div id="nav-sections" class="nav"></div>
+	</nav>
+	<nav class="side">
+		<div class="tabs" role="tablist">
+			<button data-tab="files" class="active">ファイル</button>
+			<button data-tab="threads">メッセージ</button>
+		</div>
+		<div id="file-tools" class="file-tools">
+			<select id="file-scope" title="一覧に出すファイル">
+				<option value="section" selected>選択中のセクションのみ</option>
+				<option value="all">すべて</option>
+			</select>
+			<input id="filter" type="search" placeholder="絞り込み">
+		</div>
+		<div id="nav" class="nav"></div>
+	</nav>
+	<main id="main" class="main"></main>
+</div>
+<dialog id="composer">
+	<form method="dialog" class="composer">
+		<div id="composer-where" class="where"></div>
+		<fieldset class="kinds">
+			<legend>種類</legend>
+			<label><input type="radio" name="kind" value="instruction"><span>指示</span></label>
+			<label><input type="radio" name="kind" value="question" checked><span>質問</span></label>
+			<label><input type="radio" name="kind" value="reconsider"><span>再考</span></label>
+			<label><input type="radio" name="kind" value="other"><span>その他</span></label>
+		</fieldset>
+		<div id="composer-kind-note" class="kind-note"></div>
+		<textarea id="composer-body" rows="8" placeholder="メッセージ"></textarea>
+		<div class="row">
+			<button value="cancel" formnovalidate>やめる</button>
+			<button id="composer-save" value="save" class="primary">保存（未送付）</button>
+		</div>
+	</form>
+</dialog>
+<dialog id="copybox">
+	<form method="dialog" class="composer">
+		<div>クリップボードに書けませんでした。下の文を選んでコピーしてください。</div>
+		<textarea id="copybox-text" rows="14" readonly></textarea>
+		<div class="row"><button value="close" class="primary">閉じる</button></div>
+	</form>
+</dialog>
+<div id="toast" class="toast" hidden></div>
+<script>window.Prism = { manual: true, disableWorkerMessageHandler: true };</script>
+<script src="vendor/prism.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
