@@ -17,31 +17,31 @@ func TestDir(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home, repo := filepath.FromSlash("/h"), filepath.FromSlash("/r")
 	cases := []struct{ agent, scope, want string }{
-		{"claude", ScopeUser, "/h/.claude/skills/sedi-review"},
-		{"codex", ScopeUser, "/h/.agents/skills/sedi-review"},
-		{"claude", ScopeProject, "/r/.claude/skills/sedi-review"},
-		{"codex", ScopeProject, "/r/.agents/skills/sedi-review"},
+		{"claude", ScopeUser, "/h/.claude/skills"},
+		{"codex", ScopeUser, "/h/.agents/skills"},
+		{"claude", ScopeProject, "/r/.claude/skills"},
+		{"codex", ScopeProject, "/r/.agents/skills"},
 	}
 	for _, c := range cases {
-		got, err := Dir(c.agent, c.scope, home, repo)
+		got, err := SkillsDir(c.agent, c.scope, home, repo)
 		if err != nil || got != filepath.FromSlash(c.want) {
 			t.Errorf("%s %s: got %q %v", c.agent, c.scope, got, err)
 		}
 	}
-	if _, err := Dir("cursor", ScopeUser, home, repo); err == nil {
+	if _, err := SkillsDir("cursor", ScopeUser, home, repo); err == nil {
 		t.Error("unknown agent should fail")
 	}
-	if _, err := Dir("claude", ScopeProject, home, ""); err == nil {
+	if _, err := SkillsDir("claude", ScopeProject, home, ""); err == nil {
 		t.Error("project scope without a repository should fail")
 	}
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.FromSlash("/c"))
-	if got, _ := Dir("claude", ScopeUser, home, repo); got != filepath.FromSlash("/c/skills/sedi-review") {
+	if got, _ := SkillsDir("claude", ScopeUser, home, repo); got != filepath.FromSlash("/c/skills") {
 		t.Errorf("CLAUDE_CONFIG_DIR should be respected, got %q", got)
 	}
 }
 
 func TestInstallFlow(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), "skills", Name)
+	dest := filepath.Join(t.TempDir(), "skills", "sedi-review")
 	if st, _ := Status(src, dest); st != NotInstalled {
 		t.Fatalf("status before install: %s", st)
 	}
@@ -92,7 +92,7 @@ func TestInstallFlow(t *testing.T) {
 }
 
 func TestUninstallRemovesFolder(t *testing.T) {
-	dest := filepath.Join(t.TempDir(), Name)
+	dest := filepath.Join(t.TempDir(), "sedi-review")
 	if _, err := Install(src, dest, false); err != nil {
 		t.Fatal(err)
 	}
@@ -101,5 +101,17 @@ func TestUninstallRemovesFolder(t *testing.T) {
 	}
 	if _, err := os.Stat(dest); err == nil {
 		t.Error("the skill folder should be gone")
+	}
+}
+
+func TestNames(t *testing.T) {
+	root := fstest.MapFS{
+		"sedi-review/SKILL.md":      {Data: []byte("a")},
+		"sedi-review-init/SKILL.md": {Data: []byte("b")},
+		"notes/readme.md":           {Data: []byte("c")},
+	}
+	got, err := Names(root)
+	if err != nil || strings.Join(got, ",") != "sedi-review,sedi-review-init" {
+		t.Errorf("Names: %v %v", got, err)
 	}
 }

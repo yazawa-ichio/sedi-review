@@ -4,7 +4,7 @@ AI が書いた大きな差分を、意味のセクションに分けて読む�
 
 - [仕組み](docs/design.md)
 - [命令の一覧](docs/cli.md)
-- [エージェント向けの skill](skills/sedi-review/SKILL.md)
+- エージェント向けの skill: [作業](skills/sedi-review/SKILL.md)、[使い始める準備](skills/sedi-review-init/SKILL.md)
 
 ## 入れる
 
@@ -63,15 +63,20 @@ sedi-review open --target work --open
 
 ### エージェントに skill を入れる
 
-エージェントが受け持つ作業（セクションを作る、メッセージに答える、待ち受け）の手順は、
-[`skills/sedi-review/SKILL.md`](skills/sedi-review/SKILL.md) にある。[Agent Skills](https://agentskills.io) の形式なので、
+エージェント向けの手順を 2 つ用意している。[Agent Skills](https://agentskills.io) の形式なので、
 Claude Code と Codex のどちらでも使える。
+
+| skill | 中身 |
+|---|---|
+| [`sedi-review`](skills/sedi-review/SKILL.md) | セクションを作る、メッセージに答える、待ち受け |
+| [`sedi-review-init`](skills/sedi-review-init/SKILL.md) | リポジトリで使い始める準備（CLI を入れる、比べる元と規則を決めて `init`、skill を入れる） |
 
 skill は実行ファイルに埋め込んであり、実行ファイルと同じ版の手順を入れられる:
 
 ```bash
-sedi-review skill install --agent claude            # Claude Code に入れる
-sedi-review skill install --agent claude,codex      # 両方に入れる
+sedi-review skill install --agent claude            # Claude Code に、2 つとも入れる
+sedi-review skill install --agent claude,codex      # 両方のエージェントに入れる
+sedi-review skill install --agent claude --skill sedi-review   # 1 つだけ入れる
 sedi-review skill install --agent codex --scope project   # このリポジトリだけで使う
 sedi-review skill status                            # どこに入っていて、この版と同じか
 sedi-review skill uninstall --agent claude
@@ -86,8 +91,8 @@ sedi-review skill uninstall --agent claude
 
 | エージェント | `--scope user`（既定。すべてのリポジトリ） | `--scope project`（このリポジトリだけ） |
 |---|---|---|
-| Claude Code | `~/.claude/skills/sedi-review/`（`CLAUDE_CONFIG_DIR` があればその下） | `<リポジトリ>/.claude/skills/sedi-review/` |
-| Codex | `~/.agents/skills/sedi-review/` | `<リポジトリ>/.agents/skills/sedi-review/` |
+| Claude Code | `~/.claude/skills/<skill>/`（`CLAUDE_CONFIG_DIR` があればその下） | `<リポジトリ>/.claude/skills/<skill>/` |
+| Codex | `~/.agents/skills/<skill>/` | `<リポジトリ>/.agents/skills/<skill>/` |
 
 実行ファイルを使わずに、`skills/sedi-review/` のフォルダを上の場所へ手で写してもよい。
 

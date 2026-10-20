@@ -43,9 +43,9 @@ sedi-review open --base main --target work --rule code        # .sedi-review.jso
 ## skill を入れる命令
 
 ```
-sedi-review skill install   --agent claude|codex[,...] [--scope user|project] [--force] [--repo PATH]
-sedi-review skill uninstall --agent claude|codex[,...] [--scope user|project] [--force] [--repo PATH]
-sedi-review skill status    [--agent claude|codex[,...]] [--repo PATH]
+sedi-review skill install   --agent claude|codex[,...] [--skill NAME[,...]] [--scope user|project] [--force] [--repo PATH]
+sedi-review skill uninstall --agent claude|codex[,...] [--skill NAME[,...]] [--scope user|project] [--force] [--repo PATH]
+sedi-review skill status    [--agent claude|codex[,...]] [--skill NAME[,...]] [--repo PATH]
 ```
 
 | 命令 | すること |
@@ -54,8 +54,10 @@ sedi-review skill status    [--agent claude|codex[,...]] [--repo PATH]
 | `skill uninstall` | skill のファイルを消し、空になったフォルダを消す。利用者が足したファイルは残す。中身が違えば止まる。`--force` で消す |
 | `skill status` | user と project の各置き場所に、入っているか、この版と同じかを出す |
 
-置き場所は、Claude Code が `~/.claude/skills/sedi-review/`（`CLAUDE_CONFIG_DIR` があればその下）か `<リポジトリ>/.claude/skills/sedi-review/`、
-Codex が `~/.agents/skills/sedi-review/` か `<リポジトリ>/.agents/skills/sedi-review/` です。
+埋め込んである skill は `sedi-review`（作業の手順）と `sedi-review-init`（使い始める準備）です。`--skill` で選び、省くとすべてを扱います。
+
+置き場所は、Claude Code が `~/.claude/skills/<skill>/`（`CLAUDE_CONFIG_DIR` があればその下）か `<リポジトリ>/.claude/skills/<skill>/`、
+Codex が `~/.agents/skills/<skill>/` か `<リポジトリ>/.agents/skills/<skill>/` です。
 
 ## エージェント向けの命令
 

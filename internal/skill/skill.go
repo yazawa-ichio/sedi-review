@@ -13,9 +13,6 @@ import (
 	"strings"
 )
 
-// Name は skill のフォルダ名。Agent Skills の決まりで、SKILL.md の name と同じにする。
-const Name = "sedi-review"
-
 var Agents = []string{"claude", "codex"}
 
 const (
@@ -23,8 +20,9 @@ const (
 	ScopeProject = "project"
 )
 
-// Dir は skill を置くフォルダを返す。user なら home の下、project なら repo の下。
-func Dir(agent, scope, home, repo string) (string, error) {
+// SkillsDir は skill を並べるフォルダ（その下に skill ごとのフォルダを置く）を返す。
+// user なら home の下、project なら repo の下。
+func SkillsDir(agent, scope, home, repo string) (string, error) {
 	var base string
 	switch scope {
 	case ScopeUser:
@@ -53,7 +51,26 @@ func Dir(agent, scope, home, repo string) (string, error) {
 	if base == "" {
 		return "", fmt.Errorf("agent は %s のどれかです: %q", strings.Join(Agents, " / "), agent)
 	}
-	return filepath.Join(base, "skills", Name), nil
+	return filepath.Join(base, "skills"), nil
+}
+
+// Names は、埋め込んだ skill の名前（skills の下のフォルダ名）を返す。
+// Agent Skills の決まりで、フォルダ名は SKILL.md の name と同じにする。
+func Names(root fs.FS) ([]string, error) {
+	entries, err := fs.ReadDir(root, ".")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			if _, err := fs.Stat(root, path.Join(e.Name(), "SKILL.md")); err == nil {
+				names = append(names, e.Name())
+			}
+		}
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 const (

@@ -22,8 +22,8 @@ import (
 
 const usage = `使い方（リポジトリの中で。別の場所からは --repo PATH）:
   sedi-review init [--base REF] [--rule NAME] [--two-dot] [--force]
-  sedi-review skill install|uninstall --agent claude|codex[,...] [--scope user|project] [--force]
-  sedi-review skill status [--agent ...]
+  sedi-review skill install|uninstall --agent claude|codex[,...] [--skill NAME[,...]] [--scope user|project] [--force]
+  sedi-review skill status [--agent ...] [--skill ...]
   sedi-review version
   sedi-review open [--base REF] [--target REF] [--two-dot] [--rule NAME] [--port N] [--open] [-- PATHSPEC...]
   sedi-review list
