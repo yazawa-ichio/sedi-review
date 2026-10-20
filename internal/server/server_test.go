@@ -111,7 +111,7 @@ func TestGuards(t *testing.T) {
 func TestSummaryHasNoNullLists(t *testing.T) {
 	_, base := start(t)
 	_, body := do(t, "GET", base+"/api/review", "", nil)
-	for _, key := range []string{`"hunks":null`, `"files":null`, `"sections":null`, `"threads":null`} {
+	for _, key := range []string{`"hunks":null`, `"files":null`, `"sections":null`, `"threads":null`, `"ranges":null`} {
 		if strings.Contains(body, key) {
 			t.Errorf("summary contains %s", key)
 		}

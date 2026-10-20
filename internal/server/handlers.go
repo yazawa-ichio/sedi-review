@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yazawa-ichio/sedi-review/internal/gitx"
+	"github.com/yazawa-ichio/sedi-review/internal/review"
 	"github.com/yazawa-ichio/sedi-review/internal/store"
 )
 
@@ -69,7 +70,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	for _, info := range st.Sections() {
 		sections = append(sections, map[string]any{
 			"key": info.Key, "name": info.Name, "intent": info.Intent, "checks": orEmpty(info.Checks), "depth": info.Depth,
-			"hunks": orEmpty(info.Hunks), "files": orEmpty(info.Files), "children": orEmpty(info.Children), "marked": st.SectionMarked(info.Key),
+			"hunks": orEmpty(info.Hunks), "ranges": rangesOrEmpty(info.Ranges), "files": orEmpty(info.Files), "children": orEmpty(info.Children), "marked": st.SectionMarked(info.Key),
 		})
 	}
 	threads := []threadView{}
@@ -82,11 +83,18 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		"review":     st.Review,
 		"files":      files,
 		"sections":   sections,
-		"unassigned": map[string]any{"hunks": orEmpty(hunks), "files": orEmpty(binaries)},
+		"unassigned": map[string]any{"hunks": orEmpty(hunks), "ranges": rangesOrEmpty(st.UnassignedRanges()), "files": orEmpty(binaries)},
 		"threads":    threads,
 		"presence":   s.presence(),
 		"kinds":      store.Kinds,
 	})
+}
+
+func rangesOrEmpty(v []review.HunkRange) []review.HunkRange {
+	if v == nil {
+		return []review.HunkRange{}
+	}
+	return v
 }
 
 func orEmpty(v []string) []string {

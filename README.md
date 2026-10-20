@@ -44,7 +44,8 @@ sedi-review open --target work --open
 ```
 
 - 比べる元は設定の `base`（`--base` で変えられる）。既定は `main...work`（分かれた点から work まで）。`--two-dot` で `main work`
-- 対象を絞るときは `--` の後に pathspec を書く。例: `-- 'Assets/**/*.cs'`
+- 対象を絞るときは `--` の後に git の pathspec を書く。例: コードだけなら `-- '*.cs'`、フォルダなら `-- Assets/App`。
+  ほかの例は [命令の一覧](docs/cli.md#開く指定の例)
 - 名前を付けたルールは `.sedi-review.json` の `rules` に書き、`--rule` で選ぶ。組み込みは `unity`（`*.cs.meta` を外す）と `all`
 - 画面のタブを閉じて 30 秒たつと終わる。同じ指定で開き直すと、前の続きから読める
 

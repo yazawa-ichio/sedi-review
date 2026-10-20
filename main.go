@@ -30,7 +30,7 @@ const usage = `使い方（リポジトリの中で。別の場所からは --re
   sedi-review refresh  --review ID
 
 エージェント向け（どれも --repo PATH を付けられる）:
-  sedi-review hunks    --review ID [--json]
+  sedi-review hunks    --review ID [--files] [--json] [PATH...]
   sedi-review sections --review ID set FILE|-
   sedi-review sections --review ID show
   sedi-review threads  --review ID [--json]
@@ -246,15 +246,17 @@ func cmdRefresh(args []string) error {
 func cmdHunks(args []string) error {
 	a := newAgentFlags("hunks")
 	asJSON := a.fs.Bool("json", false, "JSON で出す")
+	filesOnly := a.fs.Bool("files", false, "hunk を出さず、ファイルごとの hunk の数と行数だけを出す")
 	if err := a.parse(args); err != nil {
 		return err
 	}
+	patterns := a.fs.Args()
 	st, err := review.Load(*a.repo, *a.review)
 	if err != nil {
 		return err
 	}
 	if !*asJSON {
-		fmt.Print(st.Overview())
+		fmt.Print(st.Overview(*filesOnly, patterns))
 		return nil
 	}
 	type hunk struct {
@@ -265,11 +267,24 @@ func cmdHunks(args []string) error {
 	type file struct {
 		Path, OldPath, Status string
 		Binary                bool
-		Hunks                 []hunk
+		HunkCount, Adds, Dels int    `json:",omitempty"`
+		Hunks                 []hunk `json:",omitempty"`
 	}
 	var out []file
 	for _, f := range st.Files {
+		if !review.MatchPath(f.Path, patterns) {
+			continue
+		}
 		ff := file{Path: f.Path, OldPath: f.OldPath, Status: f.Status, Binary: f.Binary}
+		if *filesOnly {
+			for _, h := range f.Hunks {
+				ff.Adds += h.Adds
+				ff.Dels += h.Dels
+			}
+			ff.HunkCount = len(f.Hunks)
+			out = append(out, ff)
+			continue
+		}
 		for _, h := range f.Hunks {
 			ff.Hunks = append(ff.Hunks, hunk{h.ID, h.Context, h.Num, h.OldStart, h.OldCount, h.NewStart, h.NewCount, h.Adds, h.Dels})
 		}
@@ -300,7 +315,7 @@ func cmdSections(args []string) error {
 			return err
 		}
 		hunks, files := st.Unassigned()
-		return printJSON(map[string]any{"sections": st.RawSections(), "unassigned": map[string]any{"hunks": hunks, "files": files}})
+		return printJSON(map[string]any{"sections": st.RawSections(), "unassigned": map[string]any{"hunks": hunks, "ranges": st.UnassignedRanges(), "files": files}})
 	case "set":
 		if len(rest) < 2 {
 			return fmt.Errorf("set の後に FILE か - を指定してください")

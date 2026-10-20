@@ -24,6 +24,22 @@ sedi-review version
 
 版を出す。`go install ...@v0.1.0` で入れたものはその版、手元で作ったものはコミットを出す（`--version` でも同じ）。
 
+### 開く指定の例
+
+```bash
+sedi-review open --target feature/save                       # 設定の base と比べる
+sedi-review open --base 1a2b3c4~1 --target 1a2b3c4            # 1 つのコミットだけ
+sedi-review open --base main --target work -- '*.cs'          # コードだけ（C#）
+sedi-review open --base main --target work -- Assets/App ':(exclude)Assets/App/Generated'
+sedi-review open --base main --target work --rule code        # .sedi-review.json の rules.code
+```
+
+`--` の後は git の pathspec です。いつも使う絞り方は、`.sedi-review.json` に名前を付けて書けます:
+
+```json
+{ "base": "main", "rule": "unity", "rules": { "unity": [":(exclude,glob)**/*.cs.meta"], "code": [":(glob)**/*.cs"] } }
+```
+
 ## skill を入れる命令
 
 ```
@@ -44,7 +60,7 @@ Codex が `~/.agents/skills/sedi-review/` か `<リポジトリ>/.agents/skills/
 ## エージェント向けの命令
 
 ```
-sedi-review hunks    --review ID [--json]
+sedi-review hunks    --review ID [--files] [--json] [PATH...]
 sedi-review sections --review ID set FILE|-
 sedi-review sections --review ID show
 sedi-review threads  --review ID [--json]
@@ -57,9 +73,9 @@ sedi-review wait     --review ID
 
 | 命令 | すること |
 |---|---|
-| `hunks` | ファイルと hunk の一覧を出す。各 hunk は `<ID> h<通し番号> @@ ... @@ +追加 -削除 <関数の文脈>` |
+| `hunks` | ファイルと hunk の一覧を出す。各 hunk は `<ID> h<通し番号> @@ ... @@ +追加 -削除 <関数の文脈>`。`--files` でファイルごとの hunk の数と行数だけを出す。`PATH` で絞る（下） |
 | `sections set` | セクションの JSON を確かめてから取り込む（形は [仕組み](design.md) の 7 章） |
-| `sections show` | 取り込んだセクションと、未分類の hunk とファイルを出す |
+| `sections show` | 取り込んだセクションと、未分類の hunk・hunk の残りの範囲・ファイルを出す |
 | `threads` | 全スレッドを、渡す文の形で出す |
 | `reply` | スレッドに返事を書く |
 | `post` | エージェントから新しいスレッドを始める。`KIND` の既定は `other` |
@@ -68,6 +84,12 @@ sedi-review wait     --review ID
 | `wait` | 画面から「送る」で渡されたメッセージを待つ |
 
 本文は `--body-file -` で標準入力から UTF-8 で渡せます。
+
+### `hunks` の PATH
+
+- フォルダかファイルのパス: そのパスと、その下（例: `Assets/App`）。`/` を含まない名前は、ファイル名とも比べる（例: `Save.cs`）
+- `*` `?` `[` を含む glob: `/` を含めばパス全体に、含まなければファイル名に当てる（例: `'*.cs'`、`'Assets/*/Save.cs'`）
+- 並べると、どれかに合うファイルを出す。`--files` などの指定は PATH より前に書く
 
 ### ANCHOR（付け先）
 

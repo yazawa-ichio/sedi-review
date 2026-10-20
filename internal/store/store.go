@@ -33,12 +33,21 @@ type Review struct {
 }
 
 type Section struct {
-	Name     string     `json:"name"`
-	Intent   string     `json:"intent,omitempty"`
-	Checks   []string   `json:"checks,omitempty"`
-	Files    []string   `json:"files,omitempty"`
-	Hunks    []string   `json:"hunks,omitempty"`
-	Children []*Section `json:"children,omitempty"`
+	Name     string      `json:"name"`
+	Intent   string      `json:"intent,omitempty"`
+	Checks   []string    `json:"checks,omitempty"`
+	Files    []string    `json:"files,omitempty"`
+	Hunks    []string    `json:"hunks,omitempty"`
+	Lines    []LineRange `json:"lines,omitempty"`
+	Children []*Section  `json:"children,omitempty"`
+}
+
+// LineRange はファイルの行の範囲。大きな hunk（新しいファイルなど）の一部だけをセクションに入れるときに使う。
+type LineRange struct {
+	Path string `json:"path"`
+	Side string `json:"side,omitempty"` // new（既定）か old
+	From int    `json:"from"`
+	To   int    `json:"to"`
 }
 
 type Mark struct {

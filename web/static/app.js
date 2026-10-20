@@ -183,9 +183,9 @@ function renderSectionNav() {
 	const sv = S.scopeView;
 	nav.append(navItem(sv.type === 'overview', false, '全体', threadsAt('r').length ? `メッセージ ${threadsAt('r').length}` : undefined, () => go({ type: 'overview' })));
 	for (const s of sum.sections) {
-		nav.append(navItem(sv.type === 'section' && sv.key === s.key, s.marked, s.name, s.hunks.length, () => go({ type: 'section', key: s.key }), s.depth));
+		nav.append(navItem(sv.type === 'section' && sv.key === s.key, s.marked, s.name, s.hunks.length + s.ranges.length, () => go({ type: 'section', key: s.key }), s.depth));
 	}
-	const un = sum.unassigned.hunks.length + sum.unassigned.files.length;
+	const un = sum.unassigned.hunks.length + sum.unassigned.ranges.length + sum.unassigned.files.length;
 	if (un > 0 || sum.sections.length === 0) {
 		nav.append(navItem(sv.type === 'unassigned', false, '未分類', un, () => go({ type: 'unassigned' })));
 	}
@@ -202,6 +202,7 @@ function scopedPaths() {
 	}
 	const paths = new Set(sum.unassigned.files);
 	for (const id of sum.unassigned.hunks) paths.add(S.idx.hunk.get(id).file.path);
+	for (const r of sum.unassigned.ranges) paths.add(S.idx.hunk.get(r.hunk).file.path);
 	return paths;
 }
 
@@ -273,18 +274,38 @@ function renderMain() {
 		const s = S.idx.section.get(v.key);
 		if (!s) return main.append(h('div', { class: 'placeholder', text: 'セクションが見つかりません' }));
 		main.append(sectionCard(s));
-		const only = new Set(s.hunks);
-		return appendFiles(main, s.files, only);
+		return appendFiles(main, s.files, viewMap(s.hunks, s.ranges));
 	}
 	if (v.type === 'unassigned') {
-		const un = new Set(S.summary.unassigned.hunks);
+		const un = S.summary.unassigned;
 		main.append(h('div', { class: 'card section-card' }, h('div', { class: 'card-body' },
-			h('h2', { text: '未分類' }), h('div', { class: 'muted', text: 'どのセクションにも入っていない hunk とバイナリのファイル' }))));
-		const paths = new Set(S.summary.unassigned.files);
-		for (const id of un) paths.add(S.idx.hunk.get(id).file.path);
-		return appendFiles(main, S.summary.files.filter((f) => paths.has(f.path)).map((f) => f.path), un);
+			h('h2', { text: '未分類' }), h('div', { class: 'muted', text: 'どのセクションにも入っていない hunk と、その残りの行、バイナリのファイル' }))));
+		const only = viewMap(un.hunks, un.ranges);
+		const paths = new Set(un.files);
+		for (const id of only.keys()) paths.add(S.idx.hunk.get(id).file.path);
+		return appendFiles(main, S.summary.files.filter((f) => paths.has(f.path)).map((f) => f.path), only);
 	}
 	if (v.type === 'file') main.append(fileBlock(v.path, null));
+}
+
+// viewMap は、出す hunk と、その中で出す範囲（丸ごとなら null）の対応を作る。
+function viewMap(wholeIds, ranges) {
+	const m = new Map();
+	for (const id of wholeIds) m.set(id, null);
+	for (const r of ranges || []) {
+		if (m.has(r.hunk) && m.get(r.hunk) === null) continue;
+		if (!m.has(r.hunk)) m.set(r.hunk, []);
+		m.get(r.hunk).push([r.start, r.end]);
+	}
+	return m;
+}
+
+// rangeLabel は hunk の中の範囲を、ファイルの行番号で表す。
+function rangeLabel(hk, a, b) {
+	const nums = hk.lines.slice(a, b + 1).map((l) => l.n).filter(Boolean);
+	if (nums.length) return `変更後 ${nums[0]}〜${nums[nums.length - 1]} 行`;
+	const old = hk.lines.slice(a, b + 1).map((l) => l.o).filter(Boolean);
+	return old.length ? `変更前 ${old[0]}〜${old[old.length - 1]} 行` : `${a}〜${b}`;
 }
 
 const PAGE = 200;
@@ -335,7 +356,7 @@ function sectionCard(s) {
 		h('div', { class: 'card-body' },
 			s.intent ? h('div', { class: 'intent', text: s.intent }) : null,
 			s.checks && s.checks.length ? h('div', {}, h('div', { class: 'muted', text: '確かめる点' }), h('ul', {}, s.checks.map((c) => h('li', { text: c })))) : null,
-			h('div', { class: 'muted', text: `${s.files.length} ファイル ・ ${s.hunks.length} hunk` }),
+			h('div', { class: 'muted', text: `${s.files.length} ファイル ・ ${s.hunks.length} hunk` + (s.ranges.length ? ` ・ hunk の一部 ${s.ranges.length} か所` : '') }),
 			threadList(threadsAt('s:' + s.key))));
 }
 
@@ -370,12 +391,13 @@ function fileBlock(path, only) {
 		return card;
 	}
 	const hunks = f.hunks.filter((hk) => !only || only.has(hk.id));
+	const rangesOf = (id) => (only ? only.get(id) : null);
 	const placeholder = h('div', { class: 'placeholder', text: `${hunks.length} hunk を読み込み中…`, style: `min-height:${Math.min(2000, 40 + hunks.reduce((n, hk) => n + hk.oldCount + hk.adds, 0) * 18)}px` });
 	body.append(placeholder);
 	placeholder._load = () => guarded(async () => {
 		const detail = await loadFile(path);
 		const byId = new Map(detail.hunks.map((hk) => [hk.id, hk]));
-		placeholder.replaceWith(...hunks.map((hk) => hunkBlock(f, byId.get(hk.id), hk)));
+		placeholder.replaceWith(...hunks.map((hk) => hunkBlock(f, byId.get(hk.id), hk, rangesOf(hk.id))));
 	});
 	if (S.files.has(path)) placeholder._load();
 	else observer.observe(placeholder);
@@ -409,7 +431,7 @@ const LANG_BY_EXT = {
 	yaml: 'yaml', yml: 'yaml', asset: 'yaml', prefab: 'yaml', unity: 'yaml', meta: 'yaml', mat: 'yaml', controller: 'yaml', anim: 'yaml',
 	md: 'markdown', sh: 'bash', hlsl: 'hlsl', cginc: 'hlsl', shader: 'hlsl', compute: 'hlsl',
 };
-const HIGHLIGHT_MAX_LINES = 3000;
+const HIGHLIGHT_MAX_LINES = 20000;
 
 function langOf(path) {
 	const lang = LANG_BY_EXT[path.split('.').pop().toLowerCase()];
@@ -457,17 +479,30 @@ function highlightHunk(path, hk) {
 	});
 }
 
-function hunkBlock(f, hk, sumHunk) {
+// hunkBlock は hunk を表にする。ranges があれば、その範囲の行だけを出す。
+function hunkBlock(f, hk, sumHunk, ranges) {
 	const others = (sumHunk.sections || []).filter((k) => !(S.view.type === 'section' && S.view.key === k));
+	const inRange = (i) => !ranges || ranges.some(([a, b]) => i >= a && i <= b);
 	const head = h('div', { class: 'hunk-head' },
 		h('span', { text: `h${hk.num}` }),
 		h('span', { text: `@@ -${hk.oldStart},${hk.oldCount} +${hk.newStart},${hk.newCount} @@ ${hk.context || ''}` }),
+		ranges ? h('span', { class: 'other', text: '一部: ' + ranges.map(([a, b]) => rangeLabel(hk, a, b)).join('、') }) : null,
 		others.length ? h('span', { class: 'other muted', text: '他のセクション: ' + others.join('、') }) : null,
 		h('span', { class: 'spacer', style: 'flex:1' }),
 		h('button', { class: 'small', text: 'hunk にメッセージ', onclick: () => compose({ type: 'hunk', hunk: hk.id }, `${f.path} h${hk.num}`) }));
 	const table = h('table', { class: 'code' });
 	const colored = highlightHunk(f.path, hk);
+	let skipped = 0;
+	const flushSkipped = () => {
+		if (skipped > 0) table.append(h('tr', { class: 'note' }, h('td', { class: 'num' }), h('td', { class: 'num' }), h('td', { class: 'text', text: `⋯ ここに出さない ${skipped} 行（範囲の外）` })));
+		skipped = 0;
+	};
 	hk.lines.forEach((l, i) => {
+		if (!inRange(i)) {
+			skipped++;
+			return;
+		}
+		flushSkipped();
 		const cls = l.k === '+' ? 'add' : l.k === '-' ? 'del' : l.k === '\\' ? 'note' : '';
 		const num = (side, n) => h('td', {
 			class: 'num', text: n || '', 'data-side': side,
@@ -488,6 +523,7 @@ function hunkBlock(f, hk, sumHunk) {
 		const ts = threadsAt('l:' + hk.id + ':' + i);
 		if (ts.length) table.append(h('tr', { class: 'threads-row' }, h('td', { colspan: 3 }, threadList(ts))));
 	});
+	flushSkipped();
 	return h('div', { class: 'hunk', id: 'hunk-' + hk.id }, head, h('div', { style: 'padding:0 12px' }, threadList(threadsAt('h:' + hk.id))), table);
 }
 

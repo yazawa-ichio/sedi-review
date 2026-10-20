@@ -3,6 +3,7 @@ package review
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -138,10 +139,17 @@ func (s *State) ExportAll() (string, string, error) {
 }
 
 // Overview はエージェントに渡す hunk の一覧。
-func (s *State) Overview() string {
+// filesOnly なら hunk を出さず、ファイルごとの hunk の数と行数だけを出す。
+// patterns があれば、合うファイルだけを出す（MatchPath）。
+func (s *State) Overview(filesOnly bool, patterns []string) string {
 	var b strings.Builder
 	b.WriteString(s.header() + "\n\n")
+	shown := 0
 	for _, f := range s.Files {
+		if !MatchPath(f.Path, patterns) {
+			continue
+		}
+		shown++
 		status := f.Status
 		if f.OldPath != "" {
 			status += " from " + f.OldPath
@@ -149,10 +157,51 @@ func (s *State) Overview() string {
 		if f.Binary {
 			status += " binary"
 		}
+		if filesOnly {
+			adds, dels := 0, 0
+			for _, h := range f.Hunks {
+				adds += h.Adds
+				dels += h.Dels
+			}
+			fmt.Fprintf(&b, "%s (%s) %d hunk +%d -%d\n", f.Path, status, len(f.Hunks), adds, dels)
+			continue
+		}
 		fmt.Fprintf(&b, "%s (%s)\n", f.Path, status)
 		for _, h := range f.Hunks {
 			fmt.Fprintf(&b, "  %s h%d @@ -%d,%d +%d,%d @@ +%d -%d %s\n", h.ID, h.Num, h.OldStart, h.OldCount, h.NewStart, h.NewCount, h.Adds, h.Dels, h.Context)
 		}
 	}
+	if shown == 0 && len(patterns) > 0 {
+		fmt.Fprintf(&b, "（%s に合うファイルはありません）\n", strings.Join(patterns, " "))
+	}
 	return b.String()
+}
+
+// MatchPath は、パスが指定のどれかに合うかを返す。指定が無ければ合う。
+//   - * ? [ を含む指定は glob。/ を含めばパス全体に、含まなければファイル名に当てる（例: *.cs）
+//   - それ以外は、そのパスか、そのフォルダの下のパス（例: Assets/App）。/ を含まなければ、ファイル名とも比べる（例: Save.cs）
+func MatchPath(p string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, pat := range patterns {
+		pat = strings.TrimSuffix(filepath.ToSlash(pat), "/")
+		if strings.ContainsAny(pat, "*?[") {
+			target := p
+			if !strings.Contains(pat, "/") {
+				target = path.Base(p)
+			}
+			if ok, _ := path.Match(pat, target); ok {
+				return true
+			}
+			continue
+		}
+		if p == pat || strings.HasPrefix(p, pat+"/") {
+			return true
+		}
+		if !strings.Contains(pat, "/") && path.Base(p) == pat {
+			return true
+		}
+	}
+	return false
 }

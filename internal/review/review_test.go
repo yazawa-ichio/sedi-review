@@ -300,3 +300,122 @@ func TestReviewsDoNotCollideAcrossRepos(t *testing.T) {
 		t.Error("a message in one repository leaked into another")
 	}
 }
+
+func TestSectionLineRanges(t *testing.T) {
+	dir := setupRepo(t)
+	write(t, dir, "n.cs", lines("n", 30))
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "new file")
+	if _, err := Init(dir, InitOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Create(store.Spec{Repo: dir, Base: "main", Target: "work", ThreeDot: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nf := s.File("n.cs")
+	if nf == nil || len(nf.Hunks) != 1 {
+		t.Fatalf("n.cs should be one hunk: %+v", nf)
+	}
+	nh := nf.Hunks[0].ID
+
+	bad := []string{
+		`[{"name":"x","lines":[{"path":"n.cs","from":100,"to":200}]}]`,
+		`[{"name":"x","lines":[{"path":"n.cs","side":"mid","from":1,"to":2}]}]`,
+		`[{"name":"x","lines":[{"path":"missing.cs","from":1,"to":2}]}]`,
+		`[{"name":"x","lines":[{"path":"n.cs","from":5,"to":2}]}]`,
+	}
+	for _, b := range bad {
+		if err := s.SetSections([]byte(b)); err == nil {
+			t.Errorf("should be rejected: %s", b)
+		}
+	}
+
+	secs := `[
+		{"name":"A","lines":[{"path":"n.cs","from":1,"to":10}]},
+		{"name":"B","lines":[{"path":"n.cs","side":"new","from":11,"to":20}]},
+		{"name":"Rest","files":["a.cs","b.cs","c.txt"]}
+	]`
+	if err := s.SetSections([]byte(secs)); err != nil {
+		t.Fatal(err)
+	}
+	a := s.Section("A")
+	if len(a.Hunks) != 0 || len(a.Ranges) != 1 || a.Ranges[0] != (HunkRange{nh, 0, 9}) || len(a.Files) != 1 {
+		t.Errorf("section A: %+v", a)
+	}
+	if got := s.HunkSections(nh); len(got) != 2 {
+		t.Errorf("n.cs hunk should belong to A and B, got %v", got)
+	}
+	if un, _ := s.Unassigned(); len(un) != 0 {
+		t.Errorf("no hunk is wholly unassigned, got %v", un)
+	}
+	if rest := s.UnassignedRanges(); len(rest) != 1 || rest[0] != (HunkRange{nh, 20, 29}) {
+		t.Errorf("lines 21-30 should be left unassigned, got %+v", rest)
+	}
+
+	// 範囲を変えると、そのセクションの確認済みは外れる。変えていないセクションは残る。
+	for _, k := range []string{"A", "B"} {
+		if err := s.SetMark("section", k, true, store.AuthorWorker); err != nil {
+			t.Fatal(err)
+		}
+	}
+	secs2 := strings.Replace(secs, `"from":1,"to":10`, `"from":1,"to":12`, 1)
+	if err := s.SetSections([]byte(secs2)); err != nil {
+		t.Fatal(err)
+	}
+	if s.SectionMarked("A") {
+		t.Error("changing a section's range should drop its mark")
+	}
+	if !s.SectionMarked("B") {
+		t.Error("an unchanged section should keep its mark")
+	}
+
+	// 同じセクションで丸ごとと範囲が重なれば、丸ごとだけになる。範囲は変更の行に合わせて取る。
+	both := `[{"name":"W","files":["n.cs"],"lines":[{"path":"n.cs","from":3,"to":4}]},
+		{"name":"M","lines":[{"path":"a.cs","from":3,"to":3}]},
+		{"name":"Rest","files":["b.cs","c.txt"]}]`
+	if err := s.SetSections([]byte(both)); err != nil {
+		t.Fatal(err)
+	}
+	if w := s.Section("W"); len(w.Hunks) != 1 || len(w.Ranges) != 0 {
+		t.Errorf("whole should win over a range in the same section: %+v", w)
+	}
+	m := s.Section("M")
+	if len(m.Ranges) != 1 {
+		t.Fatalf("section M: %+v", m)
+	}
+	ah := s.Hunk(m.Ranges[0].Hunk)
+	for i := m.Ranges[0].Start; i <= m.Ranges[0].End; i++ {
+		if l := ah.Lines[i]; l.New != 3 && l.Kind != '-' {
+			t.Errorf("range on a.cs line 3 picked line %+v", l)
+		}
+	}
+	if rest := s.UnassignedRanges(); len(rest) == 0 {
+		t.Error("the rest of a.cs's hunk should be left unassigned")
+	}
+}
+
+func TestMatchPath(t *testing.T) {
+	cases := []struct {
+		path     string
+		patterns []string
+		want     bool
+	}{
+		{"Assets/App/A.cs", nil, true},
+		{"Assets/App/A.cs", []string{"Assets/App"}, true},
+		{"Assets/App/A.cs", []string{"Assets/App/"}, true},
+		{"Assets/Apple/A.cs", []string{"Assets/App"}, false},
+		{"Assets/App/A.cs", []string{"*.cs"}, true},
+		{"Assets/App/A.cs.meta", []string{"*.cs"}, false},
+		{"Assets/App/A.cs", []string{"Assets/*/A.cs"}, true},
+		{"Assets/App/A.cs", []string{"Docs", "*.cs"}, true},
+		{"Assets/App/A.cs", []string{"Assets/App/A.cs"}, true},
+		{"Assets/App/A.cs", []string{"A.cs"}, true},
+		{"Assets/App/AB.cs", []string{"A.cs"}, false},
+	}
+	for _, c := range cases {
+		if got := MatchPath(c.path, c.patterns); got != c.want {
+			t.Errorf("MatchPath(%q, %v) = %v", c.path, c.patterns, got)
+		}
+	}
+}
