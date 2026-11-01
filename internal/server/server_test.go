@@ -244,3 +244,23 @@ func TestPollTimesOut(t *testing.T) {
 		t.Errorf("want timeout, got %s", body)
 	}
 }
+
+func TestSendAllQueuesOnlyUnsent(t *testing.T) {
+	srv, base := start(t)
+	page := map[string]string{"X-Sedi": "1", "Content-Type": "application/json"}
+	agent := map[string]string{"X-Sedi-Token": srv.token, "Content-Type": "application/json"}
+	var ids []string
+	for i := 0; i < 2; i++ {
+		_, body := do(t, "POST", base+"/api/threads", `{"kind":"question","anchor":{"type":"review"},"body":"q"}`, page)
+		var th store.Thread
+		json.Unmarshal([]byte(body), &th)
+		ids = append(ids, th.ID)
+	}
+	if code, body := do(t, "POST", base+"/api/agent/reply", fmt.Sprintf(`{"thread":%q,"body":"done"}`, ids[0]), agent); code != 200 {
+		t.Fatalf("reply: %d %s", code, body)
+	}
+	_, body := do(t, "POST", base+"/api/send-all", "", page)
+	if !strings.Contains(body, `"queued":1`) {
+		t.Errorf("only the unsent thread should be queued: %s", body)
+	}
+}

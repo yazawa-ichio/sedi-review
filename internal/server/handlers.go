@@ -247,7 +247,8 @@ func (s *Server) handleSendAll(w http.ResponseWriter, r *http.Request) {
 	s.do(w, func() (any, error) {
 		n := 0
 		for _, t := range s.st.ThreadList() {
-			if t.State == store.StateClosed {
+			// 作業者の未送付の発言があるものだけを渡す。返事済みのものを渡し直さないため。
+			if t.State != store.StateUnsent {
 				continue
 			}
 			if _, err := s.st.SetPending(t.ID); err != nil {
