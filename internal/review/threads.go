@@ -10,7 +10,8 @@ import (
 	"github.com/yazawa-ichio/sedi-review/internal/store"
 )
 
-// ParseAnchor は CLI の書き方（review / section:鍵 / file:パス / hunk:ID / line:ID:old|new:始め-終わり）を読む。
+// ParseAnchor は CLI の書き方（review / section:鍵 / file:パス / hunk:ID / lines:パス:old|new:始め-終わり /
+// line:ID:old|new:始め-終わり）を読む。
 func (s *State) ParseAnchor(spec string) (store.Anchor, error) {
 	kind, rest, _ := strings.Cut(spec, ":")
 	a := store.Anchor{Type: kind}
@@ -38,6 +39,27 @@ func (s *State) ParseAnchor(spec string) (store.Anchor, error) {
 		}
 		if a.End, err = strconv.Atoi(to); err != nil {
 			return a, fmt.Errorf("行の位置が数字ではありません: %s", spec)
+		}
+	case store.AnchorLines:
+		i := strings.LastIndex(rest, ":")
+		j := -1
+		if i > 0 {
+			j = strings.LastIndex(rest[:i], ":")
+		}
+		if j <= 0 {
+			return a, fmt.Errorf("行の付け先は lines:パス:old|new:始め-終わり で書きます: %s", spec)
+		}
+		a.Path, a.Side = rest[:j], rest[j+1:i]
+		from, to, ok := strings.Cut(rest[i+1:], "-")
+		if !ok {
+			to = from
+		}
+		var err error
+		if a.From, err = strconv.Atoi(from); err != nil {
+			return a, fmt.Errorf("行番号が数字ではありません: %s", spec)
+		}
+		if a.To, err = strconv.Atoi(to); err != nil {
+			return a, fmt.Errorf("行番号が数字ではありません: %s", spec)
 		}
 	default:
 		return a, fmt.Errorf("付け先の種類が不正です: %s", spec)
@@ -76,10 +98,51 @@ func (s *State) CompleteAnchor(a store.Anchor) (store.Anchor, error) {
 				a.Text = append(a.Text, string(rune(l.Kind))+l.Text)
 			}
 		}
+	case store.AnchorLines:
+		if a.Side == "" {
+			a.Side = "new"
+		}
+		ranges, err := s.resolveLines(store.LineRange{Path: a.Path, Side: a.Side, From: a.From, To: a.To})
+		if err != nil {
+			return a, err
+		}
+		a.Hunk, a.Start, a.End = "", 0, 0
+		a.Text = nil
+		for _, r := range ranges {
+			for _, l := range s.hunks[r.Hunk].Lines[r.Start : r.End+1] {
+				n := l.New
+				if a.Side == "old" {
+					n = l.Old
+				}
+				if n >= a.From && n <= a.To {
+					a.Text = append(a.Text, string(rune(l.Kind))+l.Text)
+				}
+			}
+		}
 	default:
 		return a, fmt.Errorf("付け先の種類が不正です: %s", a.Type)
 	}
 	return a, nil
+}
+
+// Place は行の付け先を、今の差分のどの hunk の何行目の後に出すかを返す。見つからなければ ok=false。
+func (s *State) Place(a store.Anchor) (hunk string, end int, ok bool) {
+	switch a.Type {
+	case store.AnchorLine:
+		h := s.hunks[a.Hunk]
+		if h == nil || a.End >= len(h.Lines) {
+			return "", 0, false
+		}
+		return a.Hunk, a.End, true
+	case store.AnchorLines:
+		ranges, err := s.resolveLines(store.LineRange{Path: a.Path, Side: a.Side, From: a.From, To: a.To})
+		if err != nil || len(ranges) == 0 {
+			return "", 0, false
+		}
+		last := ranges[len(ranges)-1]
+		return last.Hunk, last.End, true
+	}
+	return "", 0, false
 }
 
 // Describe は付け先を人が読める形にする。見つからなければ ok=false。
@@ -97,6 +160,17 @@ func (s *State) Describe(a store.Anchor) (string, bool) {
 			return fmt.Sprintf("hunk %s（%s）", a.Hunk, a.Path), false
 		}
 		return fmt.Sprintf("hunk h%d %s（%s @@ -%d,%d +%d,%d @@）", h.Num, a.Hunk, a.Path, h.OldStart, h.OldCount, h.NewStart, h.NewCount), true
+	case store.AnchorLines:
+		side := "変更後"
+		if a.Side == "old" {
+			side = "変更前"
+		}
+		_, _, ok := s.Place(a)
+		where := fmt.Sprintf("行 %s %s %d〜%d 行", a.Path, side, a.From, a.To)
+		if !ok {
+			where += "（今の差分に、その行の変更がありません）"
+		}
+		return where, ok
 	case store.AnchorLine:
 		h := s.hunks[a.Hunk]
 		side := "変更後"
@@ -255,6 +329,74 @@ func (s *State) Close(id string) (*store.Thread, error) {
 	t.Pending = false
 	t.UpdatedAt = time.Now()
 	return t, store.SaveThread(s.Dir, t)
+}
+
+// DeleteThread はスレッドを消す。送ったメッセージがあっても消す。
+func (s *State) DeleteThread(id string) error {
+	if _, err := s.thread(id); err != nil {
+		return err
+	}
+	delete(s.Threads, id)
+	return store.DeleteThread(s.Dir, id)
+}
+
+// DeleteThreads は、ids に含まれるか、states の状態にあるスレッドを消し、消した数を返す。all ならすべて消す。
+func (s *State) DeleteThreads(ids, states []string, all bool) (int, error) {
+	if !all && len(ids) == 0 && len(states) == 0 {
+		return 0, fmt.Errorf("消すスレッドを、ID・状態・すべて のどれかで指定してください")
+	}
+	for _, id := range ids {
+		if s.Threads[id] == nil {
+			return 0, fmt.Errorf("スレッド %s がありません", id)
+		}
+	}
+	for _, st := range states {
+		if _, ok := stateLabels[st]; !ok {
+			return 0, fmt.Errorf("状態が不正です: %s（unsent / sent / replied / closed）", st)
+		}
+	}
+	n := 0
+	for _, t := range s.ThreadList() {
+		if all || contains(ids, t.ID) || contains(states, t.State) {
+			if err := s.DeleteThread(t.ID); err != nil {
+				return n, err
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// SetAgentMayClose は、エージェントが閉じてよいかを作業者が決める。
+func (s *State) SetAgentMayClose(id string, on bool) (*store.Thread, error) {
+	t, err := s.thread(id)
+	if err != nil {
+		return nil, err
+	}
+	t.AgentMayClose = on
+	t.UpdatedAt = time.Now()
+	return t, store.SaveThread(s.Dir, t)
+}
+
+// AgentClose はエージェントがスレッドを閉じる。作業者が「閉じてよい」にしたものだけを閉じられる。
+func (s *State) AgentClose(id string) (*store.Thread, error) {
+	t, err := s.thread(id)
+	if err != nil {
+		return nil, err
+	}
+	if !t.AgentMayClose {
+		return nil, fmt.Errorf("スレッド %s は、作業者が「エージェントが閉じてよい」にしていないので閉じられません", id)
+	}
+	return s.Close(id)
 }
 
 func (s *State) Reattach(id string, a store.Anchor) (*store.Thread, error) {

@@ -26,21 +26,26 @@ const usage = `使い方（リポジトリの中で。別の場所からは --re
   sedi-review skill status [--agent ...] [--skill ...]
   sedi-review version
   sedi-review open [--base REF] [--target REF] [--two-dot] [--rule NAME] [--port N] [--open] [-- PATHSPEC...]
-  sedi-review list
+  sedi-review list [--json]                 動いていれば画面の URL も出す
   sedi-review refresh  --review ID
 
 エージェント向け（どれも --repo PATH を付けられる）:
   sedi-review hunks    --review ID [--files] [--json] [PATH...]
   sedi-review sections --review ID set FILE|-
   sedi-review sections --review ID show
-  sedi-review threads  --review ID [--json]
+  sedi-review threads  --review ID [--json] [--state STATE[,...]] [--since TIME]
+  sedi-review threads delete --review ID (--thread TID[,...] | --state STATE[,...] | --all)
   sedi-review reply    --review ID --thread TID (--body TEXT | --body-file FILE|-)
   sedi-review post     --review ID --anchor ANCHOR [--kind KIND] (--body TEXT | --body-file FILE|-)
   sedi-review reattach --review ID --thread TID --anchor ANCHOR
+  sedi-review close    --review ID --thread TID   作業者が「閉じてよい」にしたものだけ
   sedi-review unmark   --review ID (--file PATH | --section KEY)
-  sedi-review wait     --review ID
+  sedi-review wait     --review ID [--json]
 
-ANCHOR: review | section:<鍵> | file:<パス> | hunk:<ID> | line:<ID>:old|new:<始め>-<終わり>
+ANCHOR: review | section:<鍵> | file:<パス> | hunk:<ID> | lines:<パス>:old|new:<始め>-<終わり>（行番号）
+        | line:<ID>:old|new:<始め>-<終わり>（hunk の中の位置）
+STATE:  unsent | sent | replied | closed
+出力は UTF-8。reply / post / reattach / close / threads delete は結果を 1 行の JSON で出す。
 KIND:   instruction | question | reconsider | other
 `
 
@@ -55,7 +60,7 @@ func main() {
 	cmds := map[string]func([]string) error{
 		"init": cmdInit, "skill": cmdSkill, "version": cmdVersion, "--version": cmdVersion, "open": cmdOpen, "list": cmdList, "refresh": cmdRefresh,
 		"hunks": cmdHunks, "sections": cmdSections, "threads": cmdThreads,
-		"reply": cmdReply, "post": cmdPost, "reattach": cmdReattach, "unmark": cmdUnmark, "wait": cmdWait,
+		"reply": cmdReply, "post": cmdPost, "reattach": cmdReattach, "close": cmdClose, "unmark": cmdUnmark, "wait": cmdWait,
 	}
 	fn, ok := cmds[os.Args[1]]
 	if !ok {
@@ -170,17 +175,37 @@ func openBrowser(url string) {
 func cmdList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	repo := fs.String("repo", ".", "リポジトリ")
+	asJSON := fs.Bool("json", false, "JSON で出す")
 	fs.Parse(args)
 	list, err := review.ListReviews(*repo)
 	if err != nil {
 		return err
 	}
+	type item struct {
+		store.Review
+		URL string `json:"url,omitempty"` // サーバーが動いていれば、その画面の URL
+	}
+	out := []item{}
 	for _, r := range list {
+		it := item{Review: r}
+		if c := connect(*repo, r.ID); c != nil {
+			it.URL = c.base + "/"
+		}
+		out = append(out, it)
+	}
+	if *asJSON {
+		return printJSON(out)
+	}
+	for _, it := range out {
 		op := "..."
-		if !r.Spec.ThreeDot {
+		if !it.Spec.ThreeDot {
 			op = " "
 		}
-		fmt.Printf("%s  %s  %s%s%s  %s\n", r.ID, r.Spec.Repo, r.Spec.Base, op, r.Spec.Target, r.UpdatedAt.Format("2006-01-02 15:04"))
+		running := ""
+		if it.URL != "" {
+			running = "  動作中 " + it.URL
+		}
+		fmt.Printf("%s  %s%s%s  %s  %s%s\n", it.ID, it.Spec.Base, op, it.Spec.Target, strings.Join(it.Spec.Pathspecs, " "), it.UpdatedAt.Format("2006-01-02 15:04"), running)
 	}
 	return nil
 }
@@ -337,93 +362,6 @@ func cmdSections(args []string) error {
 	return fmt.Errorf("set か show を指定してください: %s", rest[0])
 }
 
-func cmdThreads(args []string) error {
-	a := newAgentFlags("threads")
-	asJSON := a.fs.Bool("json", false, "JSON で出す")
-	if err := a.parse(args); err != nil {
-		return err
-	}
-	st, err := review.Load(*a.repo, *a.review)
-	if err != nil {
-		return err
-	}
-	if *asJSON {
-		return printJSON(st.ThreadList())
-	}
-	fmt.Println(st.BatchText(st.ThreadList()))
-	return nil
-}
-
-func cmdReply(args []string) error {
-	a := newAgentFlags("reply")
-	thread := a.fs.String("thread", "", "スレッド ID")
-	body := a.fs.String("body", "", "本文")
-	file := a.fs.String("body-file", "", "本文のファイル（- なら標準入力）")
-	if err := a.parse(args); err != nil {
-		return err
-	}
-	text, err := readBodyFlag(*body, *file)
-	if err != nil {
-		return err
-	}
-	return withState(*a.repo, *a.review,
-		func(c *client) error {
-			_, err := c.post("/api/agent/reply", map[string]string{"thread": *thread, "body": text})
-			return err
-		},
-		func(st *review.State) error { _, err := st.AddMessage(*thread, text, store.AuthorAgent); return err })
-}
-
-func cmdPost(args []string) error {
-	a := newAgentFlags("post")
-	anchor := a.fs.String("anchor", "review", "付け先")
-	kind := a.fs.String("kind", "other", "種類")
-	body := a.fs.String("body", "", "本文")
-	file := a.fs.String("body-file", "", "本文のファイル（- なら標準入力）")
-	if err := a.parse(args); err != nil {
-		return err
-	}
-	text, err := readBodyFlag(*body, *file)
-	if err != nil {
-		return err
-	}
-	return withState(*a.repo, *a.review,
-		func(c *client) error {
-			_, err := c.post("/api/agent/post", map[string]string{"anchor": *anchor, "kind": *kind, "body": text})
-			return err
-		},
-		func(st *review.State) error {
-			an, err := st.ParseAnchor(*anchor)
-			if err != nil {
-				return err
-			}
-			_, err = st.NewThread(*kind, an, text, store.AuthorAgent)
-			return err
-		})
-}
-
-func cmdReattach(args []string) error {
-	a := newAgentFlags("reattach")
-	thread := a.fs.String("thread", "", "スレッド ID")
-	anchor := a.fs.String("anchor", "", "新しい付け先")
-	if err := a.parse(args); err != nil {
-		return err
-	}
-	return withState(*a.repo, *a.review,
-		func(c *client) error {
-			_, err := c.post("/api/agent/reattach", map[string]string{"thread": *thread, "anchor": *anchor})
-			return err
-		},
-		func(st *review.State) error {
-			an, err := st.ParseAnchor(*anchor)
-			if err != nil {
-				return err
-			}
-			_, err = st.Reattach(*thread, an)
-			return err
-		})
-}
-
 func cmdUnmark(args []string) error {
 	a := newAgentFlags("unmark")
 	file := a.fs.String("file", "", "ファイルのパス")
@@ -444,38 +382,4 @@ func cmdUnmark(args []string) error {
 			return err
 		},
 		func(st *review.State) error { return st.SetMark(kind, key, false, store.AuthorAgent) })
-}
-
-func cmdWait(args []string) error {
-	a := newAgentFlags("wait")
-	if err := a.parse(args); err != nil {
-		return err
-	}
-	c := connect(*a.repo, *a.review)
-	if c == nil {
-		return exitError{4, "Sedi Review のサーバーが動いていません（画面が閉じられた可能性があります）。待ち受けを終えてください。"}
-	}
-	data, err := c.get("/api/agent/poll")
-	if err != nil {
-		if connect(*a.repo, *a.review) == nil {
-			return exitError{4, "Sedi Review のサーバーが終わりました。待ち受けを終えてください。"}
-		}
-		return err
-	}
-	var res struct {
-		Status string `json:"status"`
-		Prompt string `json:"prompt"`
-	}
-	if err := json.Unmarshal(data, &res); err != nil {
-		return err
-	}
-	switch res.Status {
-	case "messages":
-		fmt.Println(res.Prompt)
-		fmt.Println("\n対応したら、もう一度 wait を動かして待ち受けを続けてください。")
-		return nil
-	case "timeout":
-		return exitError{3, "時間切れです。渡すものはありません。もう一度 wait を動かしてください。"}
-	}
-	return fmt.Errorf("予期しない応答です: %s", strings.TrimSpace(string(data)))
 }

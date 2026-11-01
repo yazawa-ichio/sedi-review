@@ -136,6 +136,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/threads/{id}/messages/{mid}", s.page(s.handleEditMessage))
 	mux.HandleFunc("DELETE /api/threads/{id}/messages/{mid}", s.page(s.handleDeleteMessage))
 	mux.HandleFunc("POST /api/threads/{id}/close", s.page(s.handleClose))
+	mux.HandleFunc("DELETE /api/threads/{id}", s.page(s.handleDeleteThread))
+	mux.HandleFunc("POST /api/threads/delete", s.page(s.handleDeleteThreads))
+	mux.HandleFunc("POST /api/threads/{id}/agent-may-close", s.page(s.handleAgentMayClose))
 	mux.HandleFunc("POST /api/threads/{id}/copy", s.page(s.handleCopy))
 	mux.HandleFunc("POST /api/threads/{id}/send", s.page(s.handleSend))
 	mux.HandleFunc("POST /api/export", s.page(s.handleExport))
@@ -150,6 +153,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/agent/unmark", s.agent(s.handleAgentUnmark))
 	mux.HandleFunc("POST /api/agent/sections", s.agent(s.handleAgentSections))
 	mux.HandleFunc("POST /api/agent/refresh", s.agent(s.handleRefresh))
+	mux.HandleFunc("POST /api/agent/threads/delete", s.agent(s.handleDeleteThreads))
+	mux.HandleFunc("POST /api/agent/close", s.agent(s.handleAgentClose))
 	return s.guard(mux)
 }
 

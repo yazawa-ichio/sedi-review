@@ -66,6 +66,7 @@ const (
 	AnchorFile    = "file"
 	AnchorHunk    = "hunk"
 	AnchorLine    = "line"
+	AnchorLines   = "lines" // パスと行番号で指す行。hunk は表示のたびに決める
 )
 
 type Anchor struct {
@@ -76,6 +77,8 @@ type Anchor struct {
 	Side    string   `json:"side,omitempty"` // old new
 	Start   int      `json:"start,omitempty"`
 	End     int      `json:"end,omitempty"`
+	From    int      `json:"from,omitempty"`
+	To      int      `json:"to,omitempty"`
 	Text    []string `json:"text,omitempty"`
 }
 
@@ -107,14 +110,16 @@ var Kinds = map[string]string{
 }
 
 type Thread struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Anchor    Anchor    `json:"anchor"`
-	State     string    `json:"state"`
-	Pending   bool      `json:"pending"`
-	Messages  []Message `json:"messages"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Anchor  Anchor `json:"anchor"`
+	State   string `json:"state"`
+	Pending bool   `json:"pending"`
+	// AgentMayClose は、作業者がエージェントに閉じることを許したか。
+	AgentMayClose bool      `json:"agentMayClose,omitempty"`
+	Messages      []Message `json:"messages"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type ServerInfo struct {

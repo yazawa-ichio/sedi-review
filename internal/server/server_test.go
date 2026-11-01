@@ -256,11 +256,21 @@ func TestSendAllQueuesOnlyUnsent(t *testing.T) {
 		json.Unmarshal([]byte(body), &th)
 		ids = append(ids, th.ID)
 	}
-	if code, body := do(t, "POST", base+"/api/agent/reply", fmt.Sprintf(`{"thread":%q,"body":"done"}`, ids[0]), agent); code != 200 {
-		t.Fatalf("reply: %d %s", code, body)
+	if code, body := do(t, "POST", base+"/api/agent/reply", fmt.Sprintf(`{"thread":%q,"body":"done"}`, ids[0]), agent); code != 200 || !strings.Contains(body, `"where":"全体"`) {
+		t.Fatalf("reply should return the thread with where: %d %s", code, body)
 	}
 	_, body := do(t, "POST", base+"/api/send-all", "", page)
 	if !strings.Contains(body, `"queued":1`) {
 		t.Errorf("only the unsent thread should be queued: %s", body)
+	}
+	if code, _ := do(t, "POST", base+"/api/agent/close", fmt.Sprintf(`{"thread":%q}`, ids[1]), agent); code != 400 {
+		t.Errorf("agent close without permission should fail, got %d", code)
+	}
+	if code, _ := do(t, "DELETE", base+"/api/threads/"+ids[1], "", page); code != 200 {
+		t.Errorf("page delete: %d", code)
+	}
+	_, sum := do(t, "GET", base+"/api/review", "", nil)
+	if strings.Contains(sum, ids[1]) {
+		t.Error("a deleted thread must disappear from the summary at once")
 	}
 }

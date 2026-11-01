@@ -10,6 +10,7 @@ const S = {
 	scope: 'section',
 	sel: null,
 	filter: '',
+	hideDone: loadHideDone(),
 	idx: null,
 };
 
@@ -110,7 +111,7 @@ function buildIndex() {
 	for (const s of sum.sections) idx.section.set(s.key, s);
 	for (const t of sum.threads) {
 		if (!t.found) idx.orphans.push(t);
-		const key = anchorKey(t.anchor);
+		const key = t.place ? 'l:' + t.place.hunk + ':' + t.place.end : anchorKey(t.anchor);
 		if (!idx.threads.has(key)) idx.threads.set(key, []);
 		idx.threads.get(key).push(t);
 	}
@@ -124,6 +125,7 @@ function anchorKey(a) {
 		case 'file': return 'f:' + a.path;
 		case 'hunk': return 'h:' + a.hunk;
 		case 'line': return 'l:' + a.hunk + ':' + (a.end || 0);
+		case 'lines': return 'L:' + a.path + ':' + a.from;
 	}
 	return '?';
 }
@@ -224,8 +226,9 @@ function renderListNav() {
 		}
 		if (n === 0) nav.append(h('div', { class: 'placeholder', text: '該当するファイルはありません' }));
 	} else {
-		if (sum.threads.length === 0) nav.append(h('div', { class: 'placeholder', text: 'メッセージはまだありません' }));
-		for (const t of sum.threads) {
+		const shown = sum.threads.filter(visible);
+		if (shown.length === 0) nav.append(h('div', { class: 'placeholder', text: sum.threads.length ? '隠しているものだけです' : 'メッセージはまだありません' }));
+		for (const t of shown) {
 			nav.append(navItem(false, false, `[${KIND[t.kind]}・${STATE[t.state]}] ${t.where}`, t.found ? undefined : '付け先なし', () => focusThread(t)));
 		}
 	}
@@ -337,6 +340,16 @@ function renderOverview(main) {
 		h('div', { class: 'card-body' },
 			h('div', {}, `${r.spec.repo}`),
 			h('div', { class: 'muted' }, `レビュー ID ${r.id} ・ ${sum.files.length} ファイル ・ ${hunks} hunk ・ セクション ${sum.sections.length}`),
+			sum.threads.some((t) => t.state === 'closed') ? h('div', { class: 'thread-actions' }, h('button', {
+				class: 'small', text: '閉じたスレッドを消す',
+				onclick: () => guarded(async () => {
+					const n = sum.threads.filter((t) => t.state === 'closed').length;
+					if (!confirm(`閉じたスレッド ${n} 件を消しますか？ 元に戻せません。`)) return;
+					const res = await api('POST', '/api/threads/delete', { states: ['closed'] });
+					toast(`${res.deleted} 件を消しました`);
+					await load();
+				}),
+			})) : null,
 			threadList(threadsAt('r')))));
 	if (S.idx.orphans.length) {
 		main.append(h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('strong', { text: '付け先なしのメッセージ' })),
@@ -520,7 +533,7 @@ function hunkBlock(f, hk, sumHunk, ranges) {
 			td = h('td', { class: 'text', text: l.k + l.t.replace(/\r$/, '') });
 		}
 		table.append(h('tr', { class: cls, 'data-hunk': hk.id, 'data-idx': i }, num('old', l.o), num('new', l.n), td));
-		const ts = threadsAt('l:' + hk.id + ':' + i);
+		const ts = threadsAt('l:' + hk.id + ':' + i).filter(visible);
 		if (ts.length) table.append(h('tr', { class: 'threads-row' }, h('td', { colspan: 3 }, threadList(ts))));
 	});
 	flushSkipped();
@@ -565,9 +578,18 @@ function updateSelbar() {
 		h('span', { title: sel.path, text: `${name} h${sel.num}・${n} 行（${sel.side === 'old' ? '変更前' : '変更後'}）・Shift+クリックで範囲` }),
 		h('button', {
 			class: 'primary', text: 'メッセージ',
-			onclick: () => compose({ type: 'line', hunk: sel.hunk, side: sel.side, start: sel.start, end: sel.end }, `${sel.path} ${lineRange(sel)}`),
+			onclick: () => compose(lineAnchor(sel), `${sel.path} ${lineRange(sel)}`),
 		}),
 		h('button', { text: '解除', onclick: () => { S.sel = null; for (const tr of document.querySelectorAll('tr.sel')) tr.classList.remove('sel'); updateSelbar(); } }));
+}
+
+// lineAnchor は選んだ行を、ファイルの行番号の付け先にする。コミットで hunk が変わっても外れにくい。
+function lineAnchor(sel) {
+	const detail = S.files.get(sel.path);
+	const hk = detail && detail.hunks.find((x) => x.id === sel.hunk);
+	const nums = hk ? hk.lines.slice(sel.start, sel.end + 1).map((l) => (sel.side === 'old' ? l.o : l.n)).filter(Boolean) : [];
+	if (!nums.length) return { type: 'line', hunk: sel.hunk, side: sel.side, start: sel.start, end: sel.end };
+	return { type: 'lines', path: sel.path, side: sel.side, from: nums[0], to: nums[nums.length - 1] };
 }
 
 function lineRange(sel) {
@@ -626,8 +648,22 @@ $('composer').addEventListener('close', () => {
 });
 
 function threadList(threads, showWhere = false) {
-	if (!threads.length) return null;
-	return h('div', {}, threads.map((t) => threadCard(t, showWhere)));
+	const shown = threads.filter(visible);
+	if (!shown.length) return null;
+	return h('div', {}, shown.map((t) => threadCard(t, showWhere)));
+}
+
+// visible は、隠す設定のときに閉じた・送付済みのスレッドを除く。
+function visible(t) {
+	return !S.hideDone || (t.state !== 'closed' && t.state !== 'sent');
+}
+
+function loadHideDone() {
+	try {
+		return localStorage.getItem('sedi-review.hideDone') === '1';
+	} catch {
+		return false;
+	}
 }
 
 function threadCard(t, showWhere) {
@@ -668,7 +704,20 @@ function threadCard(t, showWhere) {
 		t.state !== 'closed' ? act('閉じる', async () => {
 			await api('POST', `/api/threads/${t.id}/close`);
 			await load();
-		}) : null);
+		}) : null,
+		act('消す', async () => {
+			if (!confirm('このスレッドを消しますか？ 元に戻せません。')) return;
+			await api('DELETE', `/api/threads/${t.id}`);
+			await load();
+		}),
+		t.state !== 'closed' ? h('label', { class: 'mark small-label', title: 'エージェントが対応を終えたら、このスレッドを閉じてよいことにする' },
+			h('input', {
+				type: 'checkbox', checked: !!t.agentMayClose,
+				onchange: (e) => guarded(async () => {
+					await api('POST', `/api/threads/${t.id}/agent-may-close`, { on: e.target.checked });
+					await load();
+				}),
+			}), 'エージェントが閉じてよい') : null);
 	card.append(actions);
 	return card;
 }
@@ -714,6 +763,16 @@ $('btn-export').addEventListener('click', () => guarded(async () => {
 	if (await copyText(res.text)) toast('書き出して、貼るための文をコピーしました\n' + res.path, 6000);
 	await load();
 }));
+
+$('toggle-hide-done').checked = S.hideDone;
+$('toggle-hide-done').addEventListener('change', (e) => {
+	S.hideDone = e.target.checked;
+	try {
+		localStorage.setItem('sedi-review.hideDone', S.hideDone ? '1' : '0');
+	} catch {}
+	buildIndex();
+	render();
+});
 
 $('btn-send-all').addEventListener('click', () => guarded(async () => {
 	const res = await api('POST', '/api/send-all');

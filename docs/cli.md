@@ -15,7 +15,7 @@ sedi-review refresh --review ID
 |---|---|
 | `init` | 保存のフォルダ `.sedi-review/` と設定 `.sedi-review.json` を用意する。設定があれば書き直さない（`--force` で書き直す） |
 | `open` | レビューを開き、画面の URL を出す。同じ指定のレビューがあれば続きから開く。既に動いていれば、その URL を出す |
-| `list` | このリポジトリのレビューを出す |
+| `list` | このリポジトリのレビューを出す。サーバーが動いていれば、その画面の URL も出す。`--json` で JSON |
 | `refresh` | 同じ指定のまま差分を取り直す。中身の変わったファイルとセクションの確認済みを外す |
 
 ```
@@ -65,12 +65,14 @@ Codex が `~/.agents/skills/<skill>/` か `<リポジトリ>/.agents/skills/<ski
 sedi-review hunks    --review ID [--files] [--json] [PATH...]
 sedi-review sections --review ID set FILE|-
 sedi-review sections --review ID show
-sedi-review threads  --review ID [--json]
+sedi-review threads  --review ID [--json] [--state STATE[,...]] [--since TIME]
+sedi-review threads delete --review ID (--thread TID[,...] | --state STATE[,...] | --all)
 sedi-review reply    --review ID --thread TID (--body TEXT | --body-file FILE|-)
 sedi-review post     --review ID --anchor ANCHOR [--kind KIND] (--body TEXT | --body-file FILE|-)
 sedi-review reattach --review ID --thread TID --anchor ANCHOR
+sedi-review close    --review ID --thread TID
 sedi-review unmark   --review ID (--file PATH | --section KEY)
-sedi-review wait     --review ID
+sedi-review wait     --review ID [--json]
 ```
 
 | 命令 | すること |
@@ -78,14 +80,18 @@ sedi-review wait     --review ID
 | `hunks` | ファイルと hunk の一覧を出す。各 hunk は `<ID> h<通し番号> @@ ... @@ +追加 -削除 <関数の文脈>`。`--files` でファイルごとの hunk の数と行数だけを出す。`PATH` で絞る（下） |
 | `sections set` | セクションの JSON を確かめてから取り込む（形は [仕組み](design.md) の 7 章） |
 | `sections show` | 取り込んだセクションと、未分類の hunk・hunk の残りの範囲・ファイルを出す |
-| `threads` | 全スレッドを、渡す文の形で出す |
+| `threads` | スレッドを、渡す文の形で出す。`--state` で状態、`--since` で変わった時刻（例: `2026-11-01`、`2026-11-01T18:00`）で絞る。`--json` は付け先の説明（`where`）と、見つかったか（`found`）も入る |
+| `threads delete` | スレッドを消す。ID・状態・すべて のどれかで選ぶ。サーバーが動いていれば、画面からもすぐ消える |
 | `reply` | スレッドに返事を書く |
 | `post` | エージェントから新しいスレッドを始める。`KIND` の既定は `other` |
 | `reattach` | スレッドの付け先を付け直す |
+| `close` | スレッドを閉じる。作業者が画面で「エージェントが閉じてよい」にしたものだけ |
 | `unmark` | 確認済みの印を外す。付けることはできない |
-| `wait` | 画面から「送る」で渡されたメッセージを待つ |
+| `wait` | 画面から「送る」で渡されたメッセージを待つ。`--json` で `status`・`threads`・`prompt` を JSON で出す |
 
 本文は `--body-file -` で標準入力から UTF-8 で渡せます。
+
+命令の出力は UTF-8 です。Windows で読むときも UTF-8 として読みます（cp932 で読むと化け、JSON も読めなくなります）。`reply`・`post`・`reattach`・`close`・`threads delete` は、結果を 1 行の JSON で出します。
 
 ### `hunks` の PATH
 
@@ -101,7 +107,8 @@ sedi-review wait     --review ID
 | セクション | `section:<鍵>`（鍵は名前を ` / ` でつないだ道筋） |
 | ファイル | `file:<パス>` |
 | hunk | `hunk:<ID>` |
-| 行 | `line:<hunk の ID>:<old か new>:<始め>-<終わり>`（hunk の中の 0 から数えた位置） |
+| 行 | `lines:<パス>:<old か new>:<始め>-<終わり>`（ファイルの行番号。差分の hunk に入っている行だけ。hunk は表示のたびに決めるので、コミットしても外れにくい） |
+| 行（古い書き方） | `line:<hunk の ID>:<old か new>:<始め>-<終わり>`（hunk の中の 0 から数えた位置。hunk が変わると外れる） |
 
 ### KIND（種類）
 

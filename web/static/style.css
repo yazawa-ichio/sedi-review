@@ -161,6 +161,7 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 .badge.renamed, .badge.copied { color: var(--warn); border-color: var(--warn); }
 
 label.mark { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; cursor: pointer; }
+label.small-label { font-size: 12px; color: var(--fg-soft); }
 
 .hunk { border-top: 1px solid var(--border); }
 .hunk-head {

@@ -419,3 +419,110 @@ func TestMatchPath(t *testing.T) {
 		}
 	}
 }
+
+func TestLinesAnchorSurvivesCommit(t *testing.T) {
+	dir := setupRepo(t)
+	write(t, dir, "n.cs", lines("n", 30))
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "new file")
+	if _, err := Init(dir, InitOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Create(store.Spec{Repo: dir, Base: "main", Target: "work", ThreeDot: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byLines, err := s.ParseAnchor("lines:n.cs:new:5-6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byLines.Type != store.AnchorLines || len(byLines.Text) != 2 || byLines.Text[0] != "+n----" {
+		t.Fatalf("lines anchor: %+v", byLines)
+	}
+	nh := s.File("n.cs").Hunks[0].ID
+	byIndex, err := s.ParseAnchor("line:" + nh + ":new:4-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t1, err := s.NewThread("question", byLines, "by lines", store.AuthorWorker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t2, err := s.NewThread("question", byIndex, "by index", store.AuthorWorker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hunk, end, ok := s.Place(t1.Anchor); !ok || hunk != nh || end != 5 {
+		t.Errorf("place before commit: %s %d %v", hunk, end, ok)
+	}
+
+	// 同じ新しいファイルの別の行を直す。hunk の ID は変わる。
+	write(t, dir, "n.cs", strings.Replace(lines("n", 30), "n"+strings.Repeat("-", 20)+"\n", "changed\n", 1))
+	git(t, dir, "commit", "-q", "-am", "edit line 21")
+	if err := s.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if s.File("n.cs").Hunks[0].ID == nh {
+		t.Fatal("the hunk ID should change after the edit")
+	}
+	if _, ok := s.Describe(t1.Anchor); !ok {
+		t.Error("a lines anchor should still resolve after the commit")
+	}
+	if hunk, end, ok := s.Place(t1.Anchor); !ok || hunk != s.File("n.cs").Hunks[0].ID || end != 5 {
+		t.Errorf("place after commit: %s %d %v", hunk, end, ok)
+	}
+	if _, ok := s.Describe(t2.Anchor); ok {
+		t.Error("a hunk-index anchor is expected to be orphaned (that is the old behaviour)")
+	}
+	if _, err := s.ParseAnchor("lines:n.cs:new:100-101"); err == nil {
+		t.Error("lines outside the diff should be rejected")
+	}
+	if _, err := s.ParseAnchor("lines:n.cs:5-6"); err == nil {
+		t.Error("a lines anchor without a side should be rejected")
+	}
+}
+
+func TestDeleteAndAgentClose(t *testing.T) {
+	dir := setup(t)
+	s, err := Create(store.Spec{Repo: dir, Base: "main", Target: "work", ThreeDot: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := store.Anchor{Type: store.AnchorReview}
+	a, _ := s.NewThread("question", review, "a", store.AuthorWorker)
+	b, _ := s.NewThread("question", review, "b", store.AuthorWorker)
+	c, _ := s.NewThread("question", review, "c", store.AuthorWorker)
+
+	if _, err := s.AgentClose(a.ID); err == nil {
+		t.Error("the agent must not close a thread the worker did not allow")
+	}
+	if _, err := s.SetAgentMayClose(a.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if th, err := s.AgentClose(a.ID); err != nil || th.State != store.StateClosed {
+		t.Errorf("agent close after permission: %+v %v", th, err)
+	}
+
+	if _, err := s.DeleteThreads(nil, nil, false); err == nil {
+		t.Error("deleting needs a selection")
+	}
+	if _, err := s.DeleteThreads(nil, []string{"bogus"}, false); err == nil {
+		t.Error("an unknown state should be rejected")
+	}
+	if n, err := s.DeleteThreads(nil, []string{store.StateClosed}, false); err != nil || n != 1 {
+		t.Errorf("delete closed: %d %v", n, err)
+	}
+	if n, err := s.DeleteThreads([]string{b.ID}, nil, false); err != nil || n != 1 || s.Threads[b.ID] != nil {
+		t.Errorf("delete by id: %d %v", n, err)
+	}
+	again, err := Load(dir, s.Review.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Threads) != 1 || again.Threads[c.ID] == nil {
+		t.Errorf("deletions should be saved, left: %v", again.Threads)
+	}
+	if n, err := s.DeleteThreads(nil, nil, true); err != nil || n != 1 || len(s.Threads) != 0 {
+		t.Errorf("delete all: %d %v", n, err)
+	}
+}

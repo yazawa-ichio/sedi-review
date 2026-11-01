@@ -61,7 +61,10 @@ func (s *State) howToReply(tid string) string {
 		"  " + s.cmd("reattach") + " --thread " + thread + " --anchor <付け先>",
 		"- 確認済みの印は外すことだけができる:",
 		"  " + s.cmd("unmark") + " --file <パス>   または   --section <セクションの鍵>",
-		"- 付け先の書き方: review / section:<鍵> / file:<パス> / hunk:<ID> / line:<ID>:old|new:<始め>-<終わり>（hunk の中の 0 から数えた位置）",
+		"- 付け先の書き方: review / section:<鍵> / file:<パス> / hunk:<ID> / lines:<パス>:old|new:<始め>-<終わり>（ファイルの行番号。コミットしても外れにくいので、行はこちらで付ける）",
+		"- 作業者が「エージェントが閉じてよい」にしたスレッドは、対応を終えたら閉じてよい:",
+		"  " + s.cmd("close") + " --thread " + thread,
+		"- 命令の出力は UTF-8。reply などの結果は 1 行の JSON で返る",
 		"- セクションを作る（作り直す）ときは、hunk の一覧を見て、JSON を標準入力から渡す:",
 		"  " + s.cmd("hunks"),
 		"  " + s.cmd("sections") + " set -",
@@ -143,7 +146,19 @@ func (s *State) ExportAll() (string, string, error) {
 // patterns があれば、合うファイルだけを出す（MatchPath）。
 func (s *State) Overview(filesOnly bool, patterns []string) string {
 	var b strings.Builder
-	b.WriteString(s.header() + "\n\n")
+	b.WriteString(s.header() + "\n")
+	files, hunks, adds, dels := 0, 0, 0, 0
+	for _, f := range s.Files {
+		if MatchPath(f.Path, patterns) {
+			files++
+			hunks += len(f.Hunks)
+			for _, h := range f.Hunks {
+				adds += h.Adds
+				dels += h.Dels
+			}
+		}
+	}
+	fmt.Fprintf(&b, "%d ファイル、%d hunk、+%d -%d\n\n", files, hunks, adds, dels)
 	shown := 0
 	for _, f := range s.Files {
 		if !MatchPath(f.Path, patterns) {

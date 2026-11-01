@@ -44,8 +44,15 @@ type hunkSummary struct {
 
 type threadView struct {
 	*store.Thread
-	Where string `json:"where"`
-	Found bool   `json:"found"`
+	Where string     `json:"where"`
+	Found bool       `json:"found"`
+	Place *linePlace `json:"place,omitempty"`
+}
+
+// linePlace は、行の付け先を今の差分のどこに出すか（hunk と、その中の最後の行の位置）。
+type linePlace struct {
+	Hunk string `json:"hunk"`
+	End  int    `json:"end"`
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +83,11 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	threads := []threadView{}
 	for _, t := range st.ThreadList() {
 		where, ok := st.Describe(t.Anchor)
-		threads = append(threads, threadView{Thread: t, Where: where, Found: ok})
+		v := threadView{Thread: t, Where: where, Found: ok}
+		if hunk, end, ok := st.Place(t.Anchor); ok {
+			v.Place = &linePlace{Hunk: hunk, End: end}
+		}
+		threads = append(threads, v)
 	}
 	hunks, binaries := st.Unassigned()
 	writeJSON(w, map[string]any{
@@ -277,7 +288,7 @@ func (s *Server) handleAgentReply(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	s.do(w, func() (any, error) { return s.st.AddMessage(req.Thread, req.Body, store.AuthorAgent) })
+	s.do(w, func() (any, error) { return s.viewOf(s.st.AddMessage(req.Thread, req.Body, store.AuthorAgent)) })
 }
 
 func (s *Server) handleAgentPost(w http.ResponseWriter, r *http.Request) {
@@ -291,7 +302,7 @@ func (s *Server) handleAgentPost(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return s.st.NewThread(req.Kind, a, req.Body, store.AuthorAgent)
+		return s.viewOf(s.st.NewThread(req.Kind, a, req.Body, store.AuthorAgent))
 	})
 }
 
@@ -306,7 +317,7 @@ func (s *Server) handleAgentReattach(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return s.st.Reattach(req.Thread, a)
+		return s.viewOf(s.st.Reattach(req.Thread, a))
 	})
 }
 
@@ -332,3 +343,54 @@ func (s *Server) handleAgentSections(w http.ResponseWriter, r *http.Request) {
 }
 
 var errNotFound = errors.New("見つかりません")
+
+func (s *Server) handleDeleteThread(w http.ResponseWriter, r *http.Request) {
+	s.do(w, func() (any, error) { return nil, s.st.DeleteThread(r.PathValue("id")) })
+}
+
+type deleteReq struct {
+	Threads []string `json:"threads"`
+	States  []string `json:"states"`
+	All     bool     `json:"all"`
+}
+
+func (s *Server) handleDeleteThreads(w http.ResponseWriter, r *http.Request) {
+	var req deleteReq
+	if err := readBody(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	s.do(w, func() (any, error) {
+		n, err := s.st.DeleteThreads(req.Threads, req.States, req.All)
+		return map[string]int{"deleted": n}, err
+	})
+}
+
+func (s *Server) handleAgentMayClose(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		On bool `json:"on"`
+	}
+	if err := readBody(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	s.do(w, func() (any, error) { return s.st.SetAgentMayClose(r.PathValue("id"), req.On) })
+}
+
+func (s *Server) handleAgentClose(w http.ResponseWriter, r *http.Request) {
+	var req agentThreadReq
+	if err := readBody(r, &req); err != nil {
+		fail(w, err)
+		return
+	}
+	s.do(w, func() (any, error) { return s.viewOf(s.st.AgentClose(req.Thread)) })
+}
+
+// viewOf は、エージェントに返すスレッドの形（付け先の説明と、見つかったか）にする。状態の鍵の中で呼ぶ。
+func (s *Server) viewOf(t *store.Thread, err error) (any, error) {
+	if err != nil {
+		return nil, err
+	}
+	where, ok := s.st.Describe(t.Anchor)
+	return threadView{Thread: t, Where: where, Found: ok}, nil
+}
